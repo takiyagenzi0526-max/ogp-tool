@@ -21,6 +21,9 @@ export default function AdminPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [targetUrl, setTargetUrl] = useState('');
 
   useEffect(() => {
@@ -41,29 +44,56 @@ export default function AdminPage() {
     }
   }
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setImageUrl('');
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title || !targetUrl || !imageUrl) {
-      alert('タイトル・リンク先URL・画像URLは必須です');
+    if (!title || !targetUrl || (!imageUrl && !imageFile)) {
+      alert('タイトル・リンク先URL・OGP画像は必須です');
       return;
     }
     setSubmitting(true);
     try {
+      let finalImageUrl = imageUrl;
+
+      if (imageFile) {
+        setUploading(true);
+        const form = new FormData();
+        form.append('file', imageFile);
+        const uploadRes = await fetch('/api/upload', { method: 'POST', body: form });
+        if (!uploadRes.ok) {
+          const err = await uploadRes.json();
+          throw new Error(err.error || 'アップロードに失敗しました');
+        }
+        const { url } = await uploadRes.json();
+        finalImageUrl = url;
+        setUploading(false);
+      }
+
       const res = await fetch('/api/links', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, imageUrl, targetUrl }),
+        body: JSON.stringify({ title, description, imageUrl: finalImageUrl, targetUrl }),
       });
       if (!res.ok) throw new Error('作成に失敗しました');
       setTitle('');
       setDescription('');
       setImageUrl('');
+      setImageFile(null);
+      setImagePreview('');
       setTargetUrl('');
       await fetchLinks();
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setSubmitting(false);
+      setUploading(false);
     }
   }
 
@@ -122,18 +152,16 @@ export default function AdminPage() {
             />
           </Field>
 
-          <Field label="OGP画像URL * (1200x630推奨, 公開URL)">
+          <Field label="OGP画像 * (JPEG / PNG / GIF / WebP, 5MB以内, 1200x630推奨)">
             <input
-              type="url"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="https://example.com/ogp.jpg"
-              style={input()}
-              required
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              onChange={handleFileChange}
+              style={{ display: 'block', marginBottom: 8 }}
             />
-            {imageUrl && (
+            {imagePreview && (
               <img
-                src={imageUrl}
+                src={imagePreview}
                 alt="preview"
                 style={{
                   marginTop: 8,
@@ -148,7 +176,7 @@ export default function AdminPage() {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || uploading}
             style={{
               background: '#000',
               color: '#fff',
@@ -156,10 +184,10 @@ export default function AdminPage() {
               padding: '12px 24px',
               borderRadius: 8,
               fontSize: 14,
-              opacity: submitting ? 0.5 : 1,
+              opacity: submitting || uploading ? 0.5 : 1,
             }}
           >
-            {submitting ? '作成中...' : '短縮URLを作成'}
+            {uploading ? '画像アップロード中...' : submitting ? '作成中...' : '短縮URLを作成'}
           </button>
         </form>
       </section>
