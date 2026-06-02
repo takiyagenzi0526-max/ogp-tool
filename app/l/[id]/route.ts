@@ -49,6 +49,8 @@ export async function GET(
   <meta property="og:title" content="${t}">
   <meta property="og:description" content="${d}">
   <meta property="og:image" content="${img}">
+  <meta property="og:image:secure_url" content="${img}">
+  <meta property="og:image:alt" content="${t}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="${url}">
@@ -59,12 +61,13 @@ export async function GET(
   <meta name="twitter:description" content="${d}">
   <meta name="twitter:image" content="${img}">
 
-  <!-- 人間向けのリダイレクト。クローラーはここに到達する前にOGPを読み取る -->
-  <meta http-equiv="refresh" content="1; url=${url}">
+  <!-- 人間向けのリダイレクトはJSのみ（meta refreshは廃止）。
+       クローラーはJSを実行しないのでOGPを確実に読み取り、リンク先へ飛ばされない。
+       → Twitter/Threads(Meta)/各SNSで指定サムネが表示される。 -->
   <script>
     (function() {
       var ua = navigator.userAgent || '';
-      var isBot = /bot|crawler|spider|twitterbot|facebookexternalhit|slackbot|linkedinbot|discordbot|whatsapp|line|telegram/i.test(ua);
+      var isBot = /bot|crawler|spider|preview|scraper|twitterbot|facebookexternalhit|facebookcatalog|meta-externalagent|threads|slackbot|linkedinbot|discordbot|whatsapp|line|telegram|pinterest|embedly|skypeuripreview|applebot|googlebot|bingbot/i.test(ua);
       if (!isBot) {
         window.location.replace(${JSON.stringify(link.targetUrl)});
       }
