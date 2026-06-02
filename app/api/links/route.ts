@@ -44,7 +44,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { title, description, imageUrl, targetUrl } = body;
+    const { title, description, imageUrl, targetUrl, customId } = body;
 
     if (!title || !imageUrl || !targetUrl) {
       return NextResponse.json(
@@ -53,7 +53,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const id = generateId();
+    // カスタムID（/l/●●● の文字）指定があればそれを使い、空ならランダム生成
+    let id: string;
+    if (customId && String(customId).trim() !== '') {
+      id = String(customId).trim().toLowerCase();
+      if (!/^[a-z0-9-]{1,50}$/.test(id)) {
+        return NextResponse.json(
+          { error: 'カスタムURLは半角英小文字・数字・ハイフンのみ（1〜50文字）で入力してください' },
+          { status: 400 }
+        );
+      }
+      const existing = await redis.get(`link:${id}`);
+      if (existing) {
+        return NextResponse.json(
+          { error: `「${id}」はすでに使われています。別の文字を指定してください` },
+          { status: 409 }
+        );
+      }
+    } else {
+      id = generateId();
+    }
+
     const link: LinkData = {
       id,
       title,

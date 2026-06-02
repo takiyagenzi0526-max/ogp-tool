@@ -25,6 +25,7 @@ export default function AdminPage() {
   const [imagePreview, setImagePreview] = useState('');
   const [uploading, setUploading] = useState(false);
   const [targetUrl, setTargetUrl] = useState('');
+  const [customId, setCustomId] = useState('');
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -79,15 +80,19 @@ export default function AdminPage() {
       const res = await fetch('/api/links', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, imageUrl: finalImageUrl, targetUrl }),
+        body: JSON.stringify({ title, description, imageUrl: finalImageUrl, targetUrl, customId: customId.trim() }),
       });
-      if (!res.ok) throw new Error('作成に失敗しました');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || '作成に失敗しました');
+      }
       setTitle('');
       setDescription('');
       setImageUrl('');
       setImageFile(null);
       setImagePreview('');
       setTargetUrl('');
+      setCustomId('');
       await fetchLinks();
     } catch (e) {
       alert((e as Error).message);
@@ -150,6 +155,24 @@ export default function AdminPage() {
               style={input()}
               required
             />
+          </Field>
+
+          <Field label="カスタムURL (任意・空欄ならランダムな文字を自動生成)">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
+                {origin}/l/
+              </span>
+              <input
+                type="text"
+                value={customId}
+                onChange={(e) => setCustomId(e.target.value)}
+                placeholder="line（空欄ならランダム）"
+                style={{ ...input(), flex: 1, minWidth: 140 }}
+              />
+            </div>
+            <p style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
+              半角英小文字・数字・ハイフンのみ。例: line, campaign-01（他と重複する文字は使えません）
+            </p>
           </Field>
 
           <Field label="OGP画像 * (JPEG / PNG / GIF / WebP, 5MB以内, 1200x630推奨)">
