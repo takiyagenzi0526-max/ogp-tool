@@ -26,6 +26,8 @@ export default function AdminPage() {
   const [uploading, setUploading] = useState(false);
   const [targetUrl, setTargetUrl] = useState('');
   const [customId, setCustomId] = useState('');
+  // 編集中のリンクid（nullなら新規作成モード）
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -53,6 +55,29 @@ export default function AdminPage() {
     setImageUrl('');
   }
 
+  function resetForm() {
+    setTitle('');
+    setDescription('');
+    setImageUrl('');
+    setImageFile(null);
+    setImagePreview('');
+    setTargetUrl('');
+    setCustomId('');
+    setEditingId(null);
+  }
+
+  function startEdit(link: LinkData) {
+    setEditingId(link.id);
+    setTitle(link.title);
+    setDescription(link.description);
+    setTargetUrl(link.targetUrl);
+    setCustomId(link.id);
+    setImageUrl(link.imageUrl);
+    setImageFile(null);
+    setImagePreview(link.imageUrl);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title || !targetUrl || (!imageUrl && !imageFile)) {
@@ -77,22 +102,23 @@ export default function AdminPage() {
         setUploading(false);
       }
 
-      const res = await fetch('/api/links', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, imageUrl: finalImageUrl, targetUrl, customId: customId.trim() }),
-      });
+      const res = editingId
+        ? await fetch(`/api/links/${editingId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, description, imageUrl: finalImageUrl, targetUrl }),
+          })
+        : await fetch('/api/links', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, description, imageUrl: finalImageUrl, targetUrl, customId: customId.trim() }),
+          });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || '作成に失敗しました');
+        throw new Error(err.error || (editingId ? '更新に失敗しました' : '作成に失敗しました'));
       }
-      setTitle('');
-      setDescription('');
-      setImageUrl('');
-      setImageFile(null);
-      setImagePreview('');
-      setTargetUrl('');
-      setCustomId('');
+      if (editingId) alert('更新しました');
+      resetForm();
       await fetchLinks();
     } catch (e) {
       alert((e as Error).message);
@@ -107,6 +133,7 @@ export default function AdminPage() {
     try {
       const res = await fetch(`/api/links/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('削除に失敗しました');
+      if (editingId === id) resetForm();
       await fetchLinks();
     } catch (e) {
       alert((e as Error).message);
@@ -123,7 +150,14 @@ export default function AdminPage() {
       <h1 style={{ fontSize: 24, marginBottom: 24 }}>OGPリンク管理</h1>
 
       <section style={card()}>
-        <h2 style={{ fontSize: 18, marginBottom: 16 }}>新規作成</h2>
+        <h2 style={{ fontSize: 18, marginBottom: 16 }}>
+          {editingId ? `リンクを編集（/l/${editingId}）` : '新規作成'}
+        </h2>
+        {editingId && (
+          <p style={{ fontSize: 12, color: '#666', marginBottom: 16 }}>
+            短縮URLはそのままで、中身だけ差し替わります。画像を変えない場合はファイル選択不要です。
+          </p>
+        )}
         <form onSubmit={handleSubmit}>
           <Field label="タイトル *">
             <input
@@ -157,7 +191,7 @@ export default function AdminPage() {
             />
           </Field>
 
-          <Field label="カスタムURL (任意・空欄ならランダムな文字を自動生成)">
+          <Field label={editingId ? 'カスタムURL (編集では変更できません)' : 'カスタムURL (任意・空欄ならランダムな文字を自動生成)'}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
                 {origin}/l/
@@ -167,7 +201,8 @@ export default function AdminPage() {
                 value={customId}
                 onChange={(e) => setCustomId(e.target.value)}
                 placeholder="line（空欄ならランダム）"
-                style={{ ...input(), flex: 1, minWidth: 140 }}
+                disabled={!!editingId}
+                style={{ ...input(), flex: 1, minWidth: 140, ...(editingId ? { background: '#f5f5f5', color: '#999' } : {}) }}
               />
             </div>
             <p style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
@@ -175,8 +210,9 @@ export default function AdminPage() {
             </p>
           </Field>
 
-          <Field label="OGP画像 * (JPEG / PNG / GIF / WebP, 5MB以内, 1200x630推奨)">
+          <Field label={editingId ? 'OGP画像 (変更する場合のみ選択)' : 'OGP画像 * (JPEG / PNG / GIF / WebP, 5MB以内, 1200x630推奨)'}>
             <input
+              key={editingId ?? 'new'}
               type="file"
               accept="image/jpeg,image/png,image/gif,image/webp"
               onChange={handleFileChange}
@@ -197,6 +233,7 @@ export default function AdminPage() {
             )}
           </Field>
 
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             type="submit"
             disabled={submitting || uploading}
@@ -210,8 +247,30 @@ export default function AdminPage() {
               opacity: submitting || uploading ? 0.5 : 1,
             }}
           >
-            {uploading ? '画像アップロード中...' : submitting ? '作成中...' : '短縮URLを作成'}
+            {uploading
+              ? '画像アップロード中...'
+              : submitting
+                ? editingId ? '更新中...' : '作成中...'
+                : editingId ? '変更を保存' : '短縮URLを作成'}
           </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              disabled={submitting || uploading}
+              style={{
+                background: '#fff',
+                color: '#333',
+                border: '1px solid #ddd',
+                padding: '12px 24px',
+                borderRadius: 8,
+                fontSize: 14,
+              }}
+            >
+              キャンセル
+            </button>
+          )}
+          </div>
         </form>
       </section>
 
@@ -297,6 +356,12 @@ export default function AdminPage() {
                       >
                         確認
                       </a>
+                      <button
+                        onClick={() => startEdit(link)}
+                        style={btn()}
+                      >
+                        編集
+                      </button>
                       <button
                         onClick={() => handleDelete(link.id)}
                         style={{ ...btn(), color: '#d00' }}
