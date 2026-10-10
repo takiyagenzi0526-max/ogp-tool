@@ -28,8 +28,8 @@ export function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// /admin と /api/links 以下だけにBasic認証をかける
+// /admin と /api/links・/api/stats 以下だけにBasic認証をかける
 // /l/[id] (公開URL) と / (ランディング) は誰でもアクセスできる
 export const config = {
-  matcher: ['/admin/:path*', '/api/links/:path*'],
+  matcher: ['/admin/:path*', '/api/links/:path*', '/api/stats/:path*'],
 };

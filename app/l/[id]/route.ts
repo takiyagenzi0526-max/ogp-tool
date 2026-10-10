@@ -35,6 +35,8 @@ export async function GET(
   const d = escapeHtml(link.description);
   const img = escapeHtml(link.imageUrl);
   const url = escapeHtml(link.targetUrl);
+  // 人間は /go/[id] を経由させてクリック数を数える
+  const goPath = `/go/${encodeURIComponent(link.id)}`;
 
   const html = `<!DOCTYPE html>
 <html lang="ja">
@@ -69,7 +71,7 @@ export async function GET(
       var ua = navigator.userAgent || '';
       var isBot = /bot|crawler|spider|preview|scraper|twitterbot|facebookexternalhit|facebookcatalog|meta-externalagent|threads|slackbot|linkedinbot|discordbot|whatsapp|line|telegram|pinterest|embedly|skypeuripreview|applebot|googlebot|bingbot/i.test(ua);
       if (!isBot) {
-        window.location.replace(${JSON.stringify(link.targetUrl)});
+        window.location.replace(${JSON.stringify(goPath)});
       }
     })();
   </script>
@@ -93,7 +95,7 @@ export async function GET(
   <img src="${img}" alt="">
   <h1>${t}</h1>
   <p>${d}</p>
-  <p>移動中... <a href="${url}">こちらをクリック</a></p>
+  <p>移動中... <a href="${goPath}" rel="nofollow">こちらをクリック</a></p>
 </body>
 </html>`;
 

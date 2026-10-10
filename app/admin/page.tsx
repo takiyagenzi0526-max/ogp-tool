@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 
+// クリック数の自動更新間隔（画面を見ている間だけ動く）
+const STATS_INTERVAL_MS = 10_000;
+
 type LinkData = {
   id: string;
   title: string;
@@ -28,11 +31,67 @@ export default function AdminPage() {
   const [customId, setCustomId] = useState('');
   // 編集中のリンクid（nullなら新規作成モード）
   const [editingId, setEditingId] = useState<string | null>(null);
+  // クリック数
+  const [stats, setStats] = useState<{ total: Record<string, number>; today: Record<string, number> }>({ total: {}, today: {} });
+  const [dailyId, setDailyId] = useState<string | null>(null);
+  const [daily, setDaily] = useState<Record<string, number>>({});
 
   useEffect(() => {
     setOrigin(window.location.origin);
     fetchLinks();
   }, []);
+
+  // タブが表示されている間だけ定期更新（非表示の間はRedisを叩かない＝無料枠を消費しない）
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const refresh = () => {
+      fetchStats();
+      if (dailyId) fetchDaily(dailyId);
+    };
+    const start = () => {
+      if (timer) return;
+      refresh();
+      timer = setInterval(refresh, STATS_INTERVAL_MS);
+    };
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    const onVisibility = () => (document.hidden ? stop() : start());
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [dailyId]);
+
+  async function fetchStats() {
+    try {
+      const res = await fetch('/api/stats', { cache: 'no-store' });
+      if (res.ok) setStats(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function fetchDaily(id: string) {
+    try {
+      const res = await fetch(`/api/stats/${id}`, { cache: 'no-store' });
+      if (res.ok) setDaily(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function toggleDaily(id: string) {
+    if (dailyId === id) {
+      setDailyId(null);
+    } else {
+      setDaily({});
+      setDailyId(id);
+    }
+  }
 
   async function fetchLinks() {
     setLoading(true);
@@ -134,6 +193,7 @@ export default function AdminPage() {
       const res = await fetch(`/api/links/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('削除に失敗しました');
       if (editingId === id) resetForm();
+      if (dailyId === id) setDailyId(null);
       await fetchLinks();
     } catch (e) {
       alert((e as Error).message);
@@ -275,9 +335,12 @@ export default function AdminPage() {
       </section>
 
       <section style={{ ...card(), marginTop: 24 }}>
-        <h2 style={{ fontSize: 18, marginBottom: 16 }}>
+        <h2 style={{ fontSize: 18, marginBottom: 4 }}>
           作成済みリンク ({links.length})
         </h2>
+        <p style={{ fontSize: 11, color: '#999', marginBottom: 16 }}>
+          クリック数は{STATS_INTERVAL_MS / 1000}秒ごとに自動更新（日本時間で日付を区切ります）
+        </p>
         {loading ? (
           <p style={{ color: '#999' }}>読み込み中...</p>
         ) : links.length === 0 ? (
@@ -294,10 +357,9 @@ export default function AdminPage() {
                     border: '1px solid #eee',
                     borderRadius: 8,
                     marginBottom: 12,
-                    display: 'flex',
-                    gap: 12,
                   }}
                 >
+                  <div style={{ display: 'flex', gap: 12 }}>
                   <img
                     src={link.imageUrl}
                     alt=""
@@ -322,6 +384,11 @@ export default function AdminPage() {
                       }}
                     >
                       → {link.targetUrl}
+                    </div>
+                    <div style={{ fontSize: 13, marginBottom: 8 }}>
+                      今日 <b>{stats.today[link.id] ?? 0}</b>
+                      <span style={{ color: '#ccc', margin: '0 8px' }}>|</span>
+                      累計 <b>{stats.total[link.id] ?? 0}</b> クリック
                     </div>
                     <div
                       style={{
@@ -357,6 +424,12 @@ export default function AdminPage() {
                         確認
                       </a>
                       <button
+                        onClick={() => toggleDaily(link.id)}
+                        style={{ ...btn(), ...(dailyId === link.id ? { background: '#000', color: '#fff', borderColor: '#000' } : {}) }}
+                      >
+                        日別
+                      </button>
+                      <button
                         onClick={() => startEdit(link)}
                         style={btn()}
                       >
@@ -370,6 +443,8 @@ export default function AdminPage() {
                       </button>
                     </div>
                   </div>
+                  </div>
+                  {dailyId === link.id && <DailyTable daily={daily} />}
                 </li>
               );
             })}
@@ -377,6 +452,44 @@ export default function AdminPage() {
         )}
       </section>
     </main>
+  );
+}
+
+// 日別クリック数（直近30日＋それ以前に記録がある日、新しい順）
+function DailyTable({ daily }: { daily: Record<string, number> }) {
+  const days = new Set(Object.keys(daily));
+  const now = Date.now() + 9 * 60 * 60 * 1000;
+  for (let i = 0; i < 30; i++) {
+    days.add(new Date(now - i * 86400000).toISOString().slice(0, 10));
+  }
+  const rows = Array.from(days).sort().reverse();
+  const max = Math.max(1, ...rows.map((d) => daily[d] ?? 0));
+  const sum = rows.reduce((a, d) => a + (daily[d] ?? 0), 0);
+
+  return (
+    <div style={{ marginTop: 12, borderTop: '1px solid #eee', paddingTop: 12 }}>
+      <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+        日別クリック数（表示期間の合計 {sum}）
+      </div>
+      <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <tbody>
+            {rows.map((d) => {
+              const n = daily[d] ?? 0;
+              return (
+                <tr key={d} style={{ borderBottom: '1px solid #f3f3f3' }}>
+                  <td style={{ padding: '4px 8px 4px 0', whiteSpace: 'nowrap', color: '#666', width: 90 }}>{d}</td>
+                  <td style={{ padding: '4px 8px', textAlign: 'right', width: 48, fontWeight: n ? 600 : 400, color: n ? '#333' : '#bbb' }}>{n}</td>
+                  <td style={{ padding: '4px 0' }}>
+                    <div style={{ height: 8, width: `${(n / max) * 100}%`, background: '#000', borderRadius: 2, minWidth: n ? 2 : 0 }} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

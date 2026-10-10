@@ -1,5 +1,6 @@
 import { redis } from '@/lib/redis';
 import { NextResponse } from 'next/server';
+import { deleteClicks } from '@/lib/clicks';
 
 type LinkData = {
   id: string;
@@ -60,6 +61,7 @@ export async function DELETE(
     const { id } = params;
     await redis.del(`link:${id}`);
     await redis.lrem('link:ids', 0, id);
+    await deleteClicks(id);
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error(e);
